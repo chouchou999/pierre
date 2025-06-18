@@ -440,7 +440,7 @@ function startBotForUser(chatId, config, isReconnect = false) {
 // أوامر تيليجرام
 // -------------------------------------------------------------------------
 
-const bot = new TelegramBot('7761232484:AAGXAcAZfN0cQtBFHrEu9JKPJVgiaxw-Xs8', { polling: true }); // <--- تأكد من توكن التليجرام الخاص بك
+const bot = new TelegramBot('8191363716:AAHeSIfvVma3RedOcyWx2sJ1DMrj-RPHtx8', { polling: true }); // <--- تأكد من توكن التليجرام الخاص بك
 
 // UptimeRobot (لا علاقة لها بالبوت مباشرة، ولكن للحفاظ على تشغيل السيرفر)
 app.get('/', (req, res) => res.send('✅ Deriv bot is running'));
