@@ -75,8 +75,8 @@ async function enterTrade(config, direction, chatId, ws) {
             "basis": "stake",
             "contract_type": direction, // 'CALL' (صعود) أو 'PUT' (هبوط)
             "currency": "USD",
-            "duration": 1,
-            "duration_unit": "m", // 1 دقيقة
+            "duration": 57,
+            "duration_unit": "s", // 1 دقيقة
             "symbol": "R_100", // الرمز الذي تتداول عليه
             // لا نرسل TP/SL هنا، بل نعتمد على متابعتها في البوت
             // "take_profit": config.tp > 0 ? config.tp : undefined, 
@@ -119,7 +119,7 @@ async function handleTradeResult(chatId, config, msg, ws) {
         if (profit_loss > 0) { // إذا كانت الصفقة رابحة
             config.profit += profit_loss;
             config.win++;
-            bot.sendMessage(chatId, `✅ ربح! مبلغ الربح: ${profit_loss.toFixed(2)}$. الرصيد الحالي: ${config.balance.toFixed(2)}$`);
+            bot.sendMessage(chatId, `✅ ربح! مبلغ الربح: ${profit_loss.toFixed(2)}$. الرصيد الحالي: ${config.profit.toFixed(2)}$`);
 
             // إعادة تعيين الستيك وعداد المارتينجال ووقف الدورة لبدء دورة جديدة عند شمعة 10 دقائق جديدة
             config.currentStake = config.stake;
@@ -136,8 +136,8 @@ async function handleTradeResult(chatId, config, msg, ws) {
             config.loss++;
             config.currentTradeCountInCycle++; // زيادة عداد صفقات المارتينجال
 
-            bot.sendMessage(chatId, `❌ خسارة! مبلغ الخسارة: ${Math.abs(profit_loss).toFixed(2)}$. الرصيد الحالي: ${config.balance.toFixed(2)}$`);
-            console.log(`[${chatId}] خسارة في الصفقة. الرصيد: ${config.balance.toFixed(2)}.`);
+            bot.sendMessage(chatId, `❌ خسارة! مبلغ الخسارة: ${Math.abs(profit_loss).toFixed(2)}$. الرصيد الحالي: ${config.profit.toFixed(2)}$`);
+            console.log(`[${chatId}] خسارة في الصفقة. الرصيد: ${config.profit.toFixed(2)}.`);
 
             // التحقق من تجاوز حد الخسارة (SL) أو أقصى عدد للمضاعفات
             // تأكد أن config.sl و config.maxMartingaleTrades معرفين ولديهما قيم صحيحة
@@ -208,7 +208,7 @@ function startBotForUser(chatId, config, isReconnect = false) {
 
     // إضافة إعدادات المضاعفة الافتراضية إذا لم تكن موجودة
     config.martingaleFactor = config.martingaleFactor || 2.2;
-    config.maxMartingaleTrades = config.maxMartingaleTrades || 5; // الحد الأقصى للمضاعفات
+    config.maxMartingaleTrades = config.maxMartingaleTrades || 4; // الحد الأقصى للمضاعفات
 
     saveUserStates(); // حفظ حالة إعادة الضبط
 
@@ -440,7 +440,7 @@ function startBotForUser(chatId, config, isReconnect = false) {
 // أوامر تيليجرام
 // -------------------------------------------------------------------------
 
-const bot = new TelegramBot('8191363716:AAHeSIfvVma3RedOcyWx2sJ1DMrj-RPHtx8', { polling: true }); // <--- تأكد من توكن التليجرام الخاص بك
+const bot = new TelegramBot('7944266089:AAGhe5nRuZ1c8jKPK-lDn4-6O6jikKH56PQ', { polling: true }); // <--- تأكد من توكن التليجرام الخاص بك
 
 // UptimeRobot (لا علاقة لها بالبوت مباشرة، ولكن للحفاظ على تشغيل السيرفر)
 app.get('/', (req, res) => res.send('✅ Deriv bot is running'));
