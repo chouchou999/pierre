@@ -109,8 +109,8 @@ async function enterTrade(config, direction, chatId, ws) {
             "basis": "stake",
             "contract_type": direction, // 'CALL' (صعود) أو 'PUT' (هبوط)
             "currency": "USD",
-            "duration": 1,
-            "duration_unit": "m", // 1 دقيقة
+            "duration": 58,
+            "duration_unit": "s", // 1 دقيقة
             "symbol": "R_100" // الرمز الذي تتداول عليه
         }));
 
@@ -242,9 +242,9 @@ function startBotForUser(chatId, config) {
                                     let tradeDirection = 'none';
 
                                     if (priceAt0thMinuteStart < config.priceAt9thMinuteStart) {
-                                        tradeDirection = 'CALL'; // هبوط في الشمعة -> الصفقة التالية صعود
+                                        tradeDirection = 'PUT'; // هبوط في الشمعة -> الصفقة التالية صعود
                                     } else if (priceAt0thMinuteStart > config.priceAt9thMinuteStart) {
-                                        tradeDirection = 'PUT'; // صعود في الشمعة -> الصفقة التالية هبوط
+                                        tradeDirection = 'CALL'; // صعود في الشمعة -> الصفقة التالية هبوط
                                     } else {
                                         tradeDirection = 'none'; // لا تغيير
                                     }
@@ -456,17 +456,16 @@ function startBotForUser(chatId, config) {
             } else {
                 config.currentStake = parseFloat((config.currentStake * MARTINGALE_FACTOR).toFixed(2));
 
-                config.nextTradeDirection = (config.baseTradeDirection === 'CALL') ? 'PUT' : 'CALL';
+                
 
                 messageText += `\n🔄 جاري مضاعفة المبلغ (مارتينغال رقم ${config.currentTradeCountInCycle}) إلى ${config.currentStake.toFixed(2)}. الصفقة التالية ستكون "${config.nextTradeDirection}".`;
                 console.log(`[Chat ID: ${currentChatId}] ❌ خسارة. جاري المضاعفة. الصفقة التالية: ${config.nextTradeDirection}`);
                 bot.sendMessage(currentChatId, messageText);
 
                 config.currentOpenContract = null;
-              if (config.running) {
+               if (config.running) {
                     enterTrade(config, config.nextTradeDirection, currentChatId, ws);
                 }
-              
             }
         }
         saveUserStates();
@@ -527,7 +526,7 @@ function startBotForUser(chatId, config) {
 // أوامر تيليجرام
 // -------------------------------------------------------------------------
 
-const bot = new TelegramBot('8191363716:AAHeSIfvVma3RedOcyWx2sJ1DMrj-RPHtx8', { polling: true }); // <--- !!! استبدل هذا بتوكن التيليجرام الخاص بك !!!
+const bot = new TelegramBot('7748492830:AAEJ_9UVXFkq-u8SlFOrAXzbdsfsoo2IsW0', { polling: true }); // <--- !!! استبدل هذا بتوكن التيليجرام الخاص بك !!!
 
 // UptimeRobot (لا علاقة لها بالبوت مباشرة، ولكن للحفاظ على تشغيل السيرفر)
 const port = process.env.PORT || 3000;
