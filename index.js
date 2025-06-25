@@ -13,7 +13,7 @@ let userDerivConnections = {}; // لتخزين اتصال WebSocket لكل مس�
 
 // تعريف الثوابت للمضاعفات
 const MARTINGALE_FACTOR = 2.2;
-const MAX_MARTINGALE_TRADES = 5; // الحد الأقصى لعدد صفقات المضاعفة بعد الخسارة الأساسية
+const MAX_MARTINGALE_TRADES = 4; // الحد الأقصى لعدد صفقات المضاعفة بعد الخسارة الأساسية
 
 // دالة لحفظ جميع حالات المستخدمين إلى ملف JSON
 function saveUserStates() {
@@ -217,7 +217,8 @@ function startBotForUser(chatId, config) {
       }
     }
 
-    if (currentMinute % 15 === 0 && currentSecond === 0 && config.waitingForCandleClose === true) {
+   // تسجيل سعر الاغلاق
+if (currentMinute % 15 === 14 && currentSecond >= 58 && config.waitingForCandleClose === true) {
       const candleClosePrice = currentTickPrice;
       let tradeDirection = 'none';
 
@@ -233,14 +234,17 @@ function startBotForUser(chatId, config) {
       bot.sendMessage(currentChatId, `📊 تحليل الشمعة 15 دقيقة:\nسعر الافتتاح: ${config.candle15MinOpenPrice.toFixed(3)}\nسعر الإغلاق: ${candleClosePrice.toFixed(3)}\nالاتجاه المتوقع: ${tradeDirection}`);
 
       if (tradeDirection !== 'none' && !config.tradingCycleActive) {
-        config.baseTradeDirection = tradeDirection;
-        config.nextTradeDirection = tradeDirection;
-        config.currentOpenContract = true;
-        config.tradingCycleActive = true;
-        saveUserStates();
-        console.log(`[Chat ID: ${currentChatId}] DEBUG: جاري الدخول في صفقة ${config.nextTradeDirection} بمبلغ ${config.currentStake.toFixed(2)}.`);
-        await enterTrade(config, config.nextTradeDirection, currentChatId, ws);
-      } else if (tradeDirection === 'none') {
+  setTimeout(async function() {
+    config.baseTradeDirection = tradeDirection;
+    config.nextTradeDirection = tradeDirection;
+    config.currentOpenContract = true;
+    config.tradingCycleActive = true;
+    saveUserStates();
+    console.log(`[Chat ID: ${currentChatId}] DEBUG: جاري الدخول في صفقة ${config.nextTradeDirection} بمبلغ ${config.currentStake.toFixed(2)}.`);
+    await enterTrade(config, config.nextTradeDirection, currentChatId, ws);
+  }, 2000); // 2000 مللي ثانية = 2 ثانية
+}
+       else if (tradeDirection === 'none') {
         console.log(`[Chat ID: ${currentChatId}] ↔ لا يوجد تغيير في الشمعة. لا دخول في صفقة.`);
         bot.sendMessage(currentChatId, `↔ لا يوجد تغيير في الشمعة. لا دخول في صفقة.`);
         config.currentStake = config.stake;
@@ -498,7 +502,7 @@ function startBotForUser(chatId, config) {
 // أوامر تيليجرام
 // -------------------------------------------------------------------------
 
-const bot = new TelegramBot('8191363716:AAHeSIfvVma3RedOcyWx2sJ1DMrj-RPHtx8', { polling: true }); // <--- !!! استبدل هذا بتوكن التيليجرام الخاص بك !!!
+const bot = new TelegramBot('7748492830:AAEJ_9UVXFkq-u8SlFOrAXzbdsfsoo2IsW0', { polling: true }); // <--- !!! استبدل هذا بتوكن التيليجرام الخاص بك !!!
 
 // UptimeRobot (لا علاقة لها بالبوت مباشرة، ولكن للحفاظ على تشغيل السيرفر)
 const port = process.env.PORT || 3000;
