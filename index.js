@@ -140,16 +140,15 @@ function startBotForUser(chatId, config) {
     const ws = new WebSocket('wss://green.derivws.com/websockets/v3?app_id=22168');
     userDerivConnections[chatId] = ws;
 
-    // تهيئة متغيرات خاصة بالتنبؤ بالنتيجة
-    config.currentOpenContract = null; // لتخزين تفاصيل العقد النشط
-    config.predictionCheckTimer = null; // مؤقت التنبؤ
 
-    // لتخزين آخر تيك تم استقباله (مهم لتحديد نتيجة الصفقة)
+    config.currentOpenContract = null; 
+    config.predictionCheckTimer = null; 
     config.lastReceivedTickPrice = null;
-    config.minuteOfLastDecision = null;
-    config.priceAt9thMinuteStart = null;
+    config.candle15MinOpenPrice = null;
+    config.lastProcessed15MinIntervalStart = null;
     config.waitingForNextTrade = false;
-   
+    config.waitingForCandleClose = false;
+
     ws.on('open', () => {
         console.log(`[Chat ID: ${chatId}] ✅ تم الاتصال بـ Deriv. جاري المصادقة...`);
         bot.sendMessage(chatId, '✅ تم الاتصال بـ Deriv. جاري المصادقة...');
@@ -161,7 +160,7 @@ function startBotForUser(chatId, config) {
         const currentChatId = chatId;
 
         // 🟢🟢🟢 DEBUG: سجل نوع الرسالة الواردة (تم تفعيله لأغراض التصحيح) 🟢🟢🟢
-        
+
 
         // إذا توقف البوت، أغلق الاتصال وتجاهل الرسائل
         if (!config.running && ws.readyState === WebSocket.OPEN) {
@@ -189,99 +188,76 @@ function startBotForUser(chatId, config) {
             }
         }
                     else if (msg.msg_type === 'tick' && msg.tick) {
-                        const currentTickPrice = parseFloat(msg.tick.quote);
-                        const tickEpoch = msg.tick.epoch;
-                        const tickDate = new Date(tickEpoch * 1000);
-                        const currentMinute = tickDate.getMinutes();
-                        const currentSecond = tickDate.getSeconds();
+  const currentTickPrice = parseFloat(msg.tick.quote);
+  const tickEpoch = msg.tick.epoch;
+  const tickDate = new Date(tickEpoch * 1000);
+  const currentMinute = tickDate.getMinutes();
+  const currentSecond = tickDate.getSeconds();
 
-                        // 🟢🟢🟢 تحديث آخر تيك تم استقباله باستمرار (بقي كما هو تماماً كما طلبت) 🟢🟢🟢
-                        config.lastReceivedTickPrice = currentTickPrice;
-                        // ⚠ ملاحظة: سطر حفظ الحالة 'saveUserStates();' لم يتم وضعه هنا مباشرة بعد التحديث بناءً على طلبك،
-                        // مما يعني أن 'lastReceivedTickPrice' قد لا يُحفظ في كل مرة إلا عند استدعاء 'saveUserStates()' في مكان آخر.
+  config.lastReceivedTickPrice = currentTickPrice;
 
-                        // 🟢🟢🟢 DEBUG: يمكنك تفعيل هذا لمراقبة التيكات 🟢🟢🟢
-                        // تم حذف: const current10MinIntervalStartMinute = Math.floor(currentMinute / 10) * 10;
-                        // (لم يعد له صلة بمنطق التحليل الجديد)
+  if (config.running && !config.tradingCycleActive) {
+    const current15MinIntervalStartMinute = Math.floor(currentMinute / 15) * 15;
 
-                        // منطق تحديد اتجاه الصفقة الأساسية (تحليل آخر دقيقة: X9 -> X0)
-                        if (config.running && !config.tradingCycleActive) {
-                            // 🟢🟢🟢 DEBUG: جديد لمعرفة دخول الكتلة 🟢🟢🟢
-                           
-                            // --- الخطوة 1: تسجيل السعر في بداية الدقيقة X9 (أو X4) ---
-                            // (نقطة بدء تحليل "الشمعة" التي سندخل عليها صفقة عكسية)
-                            // (يمكنك تغيير currentMinute % 10 === 9 إلى currentMinute % 5 === 4 إذا كنت تستهدف دورة 5 دقائق)
-                            if (currentSecond === 0 && (currentMinute % 10 === 9)) {
-                                if (config.minuteOfLastDecision !== currentMinute) { // لمنع التكرار لنفس الدقيقة
-                                    config.priceAt9thMinuteStart = currentTickPrice; // هذا هو "سعر الافتتاح" لدقيقة التحليل
-                                    config.waitingForNextTrade = true; // الآن ننتظر أول تيك من الدقيقة التالية لإكمال التحليل
-                                    config.minuteOfLastDecision = currentMinute; // لتسجيل أننا اتخذنا قرار في هذه الدقيقة
-                                    saveUserStates(); // حفظ الحالة بعد تحديد نقطة البداية
+    if (currentSecond === 0 && currentMinute === current15MinIntervalStartMinute) {
+      if (config.lastProcessed15MinIntervalStart !== current15MinIntervalStartMinute) {
+        config.candle15MinOpenPrice = currentTickPrice;
+        config.lastProcessed15MinIntervalStart = current15MinIntervalStartMinute;
+        config.waitingForCandleClose = true;
+        config.candleStartTime = tickEpoch;
+        saveUserStates();
+        console.log(`[Chat ID: ${currentChatId}] تم تسجيل سعر الافتتاح للشمعة 15 دقيقة: ${currentTickPrice.toFixed(3)}`);
+        bot.sendMessage(currentChatId, `⏳ جاري تحليل شمعة 15 دقيقة. تسجيل سعر الافتتاح: ${currentTickPrice.toFixed(3)}`);
+      } else if (config.lastProcessed15MinIntervalStart === current15MinIntervalStartMinute && config.candleStartTime !== null) {
+        // إذا كان البوت قد بدأ بالفعل في تحليل الشمعة
+      } else {
+        // إذا كان البوت لم يبدأ بعد في تحليل الشمعة، يجب أن ينتظر حتى بداية الشمعة الجديدة
+        config.lastProcessed15MinIntervalStart = null;
+        config.candleStartTime = null;
+      }
+    }
 
-                                    console.log(`[Chat ID: ${currentChatId}] تم تسجيل سعر الافتتاح للدقيقة ${currentMinute}:00: ${currentTickPrice.toFixed(3)}`);
-                                    bot.sendMessage(currentChatId, `⏳ جاري تحليل شمعة الدقيقة ${currentMinute}:00. تسجيل سعر الافتتاح: ${currentTickPrice.toFixed(3)}`);
-                                }
-                            }
+    if (currentMinute % 15 === 0 && currentSecond === 0 && config.waitingForCandleClose === true) {
+      const candleClosePrice = currentTickPrice;
+      let tradeDirection = 'none';
 
-                            // --- الخطوة 2: تسجيل السعر في بداية الدقيقة X0 (أو X5) والدخول في الصفقة ---
-                            // (نقطة إغلاق "الشمعة" واتخاذ قرار الصفقة)
-                            // (يمكنك تغيير currentMinute % 10 === 0 إلى currentMinute % 5 === 0 إذا كنت تستهدف دورة 5 دقائق)
-                            if (currentSecond === 0 && (currentMinute % 10 === 0) && config.waitingForNextTrade === true) {
+      if (candleClosePrice < config.candle15MinOpenPrice) {
+        tradeDirection = 'CALL';
+      } else if (candleClosePrice > config.candle15MinOpenPrice) {
+        tradeDirection = 'PUT';
+      } else {
+        tradeDirection = 'none';
+      }
 
-                                // حساب الدقيقة السابقة للتأكد من أنها دقيقة X9 أو X4 الصحيحة
-                                const minuteBeforeCurrent = (currentMinute === 0) ? 59 : currentMinute - 1;
+      console.log(`[Chat ID: ${currentChatId}] سعر الافتتاح: ${config.candle15MinOpenPrice.toFixed(3)}, سعر الإغلاق: ${candleClosePrice.toFixed(3)}. الاتجاه: ${tradeDirection}`);
+      bot.sendMessage(currentChatId, `📊 تحليل الشمعة 15 دقيقة:\nسعر الافتتاح: ${config.candle15MinOpenPrice.toFixed(3)}\nسعر الإغلاق: ${candleClosePrice.toFixed(3)}\nالاتجاه المتوقع: ${tradeDirection}`);
 
-                                // التأكد من أن سعر الدقيقة X9 تم تسجيله ومن أننا كنا ننتظر هذه اللحظة
-                                if (config.priceAt9thMinuteStart !== null && (minuteBeforeCurrent % 10 === 9) && config.minuteOfLastDecision === minuteBeforeCurrent) {
+      if (tradeDirection !== 'none' && !config.tradingCycleActive) {
+        config.baseTradeDirection = tradeDirection;
+        config.nextTradeDirection = tradeDirection;
+        config.currentOpenContract = true;
+        config.tradingCycleActive = true;
+        saveUserStates();
+        console.log(`[Chat ID: ${currentChatId}] DEBUG: جاري الدخول في صفقة ${config.nextTradeDirection} بمبلغ ${config.currentStake.toFixed(2)}.`);
+        await enterTrade(config, config.nextTradeDirection, currentChatId, ws);
+      } else if (tradeDirection === 'none') {
+        console.log(`[Chat ID: ${currentChatId}] ↔ لا يوجد تغيير في الشمعة. لا دخول في صفقة.`);
+        bot.sendMessage(currentChatId, `↔ لا يوجد تغيير في الشمعة. لا دخول في صفقة.`);
+        config.currentStake = config.stake;
+        config.currentTradeCountInCycle = 0;
+        config.tradingCycleActive = false;
+        config.baseTradeDirection = null;
+        config.nextTradeDirection = null;
+        saveUserStates();
+      }
 
-                                    const priceAt0thMinuteStart = currentTickPrice; // هذا هو "سعر الإغلاق" لدقيقة التحليل
-                                    let tradeDirection = 'none';
-
-                                    if (priceAt0thMinuteStart < config.priceAt9thMinuteStart) {
-                                        tradeDirection = 'PUT'; // هبوط في الشمعة -> الصفقة التالية صعود
-                                    } else if (priceAt0thMinuteStart > config.priceAt9thMinuteStart) {
-                                        tradeDirection = 'CALL'; // صعود في الشمعة -> الصفقة التالية هبوط
-                                    } else {
-                                        tradeDirection = 'none'; // لا تغيير
-                                    }
-
-                                    // 🟢🟢🟢 رسالة تليجرام: تلخيص التحليل والاتجاه المتوقع 🟢🟢🟢
-                                    console.log(`[Chat ID: ${currentChatId}] سعر ${minuteBeforeCurrent}:00 كان ${config.priceAt9thMinuteStart.toFixed(3)}، سعر ${currentMinute}:00 هو ${priceAt0thMinuteStart.toFixed(3)}. الاتجاه: ${tradeDirection}`);
-                                    bot.sendMessage(currentChatId, `📊 تحليل الشمعة الأخيرة (${minuteBeforeCurrent}:00 -> ${currentMinute}:00):\nسعر البدء: ${config.priceAt9thMinuteStart.toFixed(3)}\nسعر الإغلاق: ${priceAt0thMinuteStart.toFixed(3)}\nالاتجاه المتوقع: ${tradeDirection}`);
-                                    // 🟢🟢🟢 نهاية الرسالة 🟢🟢🟢
-
-                                    if (tradeDirection !== 'none' && !config.tradingCycleActive) {
-                                        config.baseTradeDirection = tradeDirection; // الاتجاه الأساسي للدورة
-                                        config.nextTradeDirection = tradeDirection; // الاتجاه للصفقة التالية
-                                        config.currentOpenContract = true; // علامة أن هناك عقد مفتوح
-                                        config.tradingCycleActive = true; // بدأنا دورة تداول
-                                        saveUserStates(); // حفظ المتغيرات قبل الدخول في الصفقة
-
-                                        // 🟢🟢🟢 DEBUG: جديد لمعرفة دخول الصفقة 🟢🟢🟢
-                                        console.log(`[Chat ID: ${currentChatId}] DEBUG: جاري الدخول في صفقة ${config.nextTradeDirection} بمبلغ ${config.currentStake.toFixed(2)}.`);
-                                        await enterTrade(config, config.nextTradeDirection, currentChatId, ws);
-                                    } else if (tradeDirection === 'none') {
-                                        // 🟢🟢🟢 رسالة تليجرام: لا يوجد اتجاه واضح 🟢🟢🟢
-                                        console.log(`[Chat ID: ${currentChatId}] ↔ لا يوجد تغيير في الشمعة. لا دخول في صفقة.);
-                                        bot.sendMessage(currentChatId, ↔ لا يوجد تغيير في الشمعة. لا دخول في صفقة.`);
-                                        // 🟢🟢🟢 نهاية الرسالة 🟢🟢🟢
-                                        config.currentStake = config.stake; // إعادة تعيين الستيك
-                                        config.currentTradeCountInCycle = 0; // إعادة تعيين عداد الخسائر المتتالية
-                                        config.tradingCycleActive = false;
-                                        config.baseTradeDirection = null;
-                                        config.nextTradeDirection = null;
-                                        saveUserStates();
-                                    }
-
-                                    // إعادة تعيين هذه المتغيرات بعد معالجة القرار لهذه الدورة
-                                    config.priceAt9thMinuteStart = null;
-                                    config.waitingForNextTrade = false;
-                                    // config.minuteOfLastDecision يبقى كما هو لأنه سيتم تحديثه في بداية الدقيقة X9 التالية
-                                    saveUserStates(); // حفظ الحالة بعد إعادة التعيين
-                                }
-                            }
-                        }
-                    }
+      config.waitingForCandleClose = false;
+      config.lastProcessed15MinIntervalStart = null;
+      config.candleStartTime = null;
+      saveUserStates();
+    }
+  }
+}
 
 
         else if (msg.msg_type === 'proposal') {
@@ -452,7 +428,7 @@ function startBotForUser(chatId, config) {
             } else {
                 config.currentStake = parseFloat((config.currentStake * MARTINGALE_FACTOR).toFixed(2));
 
-                
+
 
                 messageText += `\n🔄 جاري مضاعفة المبلغ (مارتينغال رقم ${config.currentTradeCountInCycle}) إلى ${config.currentStake.toFixed(2)}. الصفقة التالية ستكون "${config.nextTradeDirection}".`;
                 console.log(`[Chat ID: ${currentChatId}] ❌ خسارة. جاري المضاعفة. الصفقة التالية: ${config.nextTradeDirection}`);
@@ -544,9 +520,9 @@ bot.onText(/\/start/, (msg) => {
 
     userStates[id] = {
         step: 'api',
-        candle10MinOpenPrice: null,
-        lastProcessed10MinIntervalStart: -1,
-        tradingCycleActive: false,
+        candle15MinOpenPrice: null,
+        lastProcessed15MinIntervalStart: null,
+        waitingForCandleClose: false,
         currentTradeCountInCycle: 0,
         profit: 0,
         win: 0,
@@ -559,9 +535,9 @@ bot.onText(/\/start/, (msg) => {
         sl: 0,
         token: '',
         lastReceivedTickPrice: null,
-        minuteOfLastDecision: null,
-        priceAt9thMinuteStart: null,
-        waitingForNextTrade: false,
+        candle15MinOpenPrice: null,
+        waitingForCandleClose: false,
+        lastProcessed15MinIntervalStart: null,
     };
     saveUserStates();
 
@@ -594,9 +570,9 @@ bot.on('message', (msg) => {
     } else if (state.step === 'sl') {
         state.sl = parseFloat(text);
         state.running = false;
-        state.candle10MinOpenPrice = null;
-        state.lastProcessed10MinIntervalStart = -1;
-        state.tradingCycleActive = false;
+        state.candle15MinOpenPrice = null;
+        state.lastProcessed15MinIntervalStart = null;
+        state.waitingForCandleClose = false;
         state.currentTradeCountInCycle = 0;
         state.profit = 0;
         state.win = 0;
@@ -604,9 +580,7 @@ bot.on('message', (msg) => {
         state.currentStake = state.stake;
         state.baseTradeDirection = null;
         state.nextTradeDirection = null;
-        state.lastReceivedTickPrice = null; 
-        state.minuteOfLastDecision = null;
-        state.priceAt9thMinuteStart = null;
+        state.lastReceivedTickPrice = null;
         state.waitingForNextTrade = false;
 
         saveUserStates();
@@ -632,17 +606,15 @@ bot.onText(/\/run/, (msg) => {
     user.running = true;
     user.currentStake = user.stake;
     user.currentTradeCountInCycle = 0;
-    user.tradingCycleActive = false;
-    user.candle10MinOpenPrice = null;
-    user.lastProcessed10MinIntervalStart = -1;
+    user.waitingForCandleClose = false;
+    user.candle15MinOpenPrice = null;
+    user.lastProcessed15MinIntervalStart = null;
     user.profit = 0;
     user.win = 0;
     user.loss = 0;
     user.baseTradeDirection = null;
     user.nextTradeDirection = null;
-    user.lastReceivedTickPrice = null; 
-    user.minuteOfLastDecision = null;
-    user.priceAt9thMinuteStart = null;
+    user.lastReceivedTickPrice = null;
     user.waitingForNextTrade = false;
 
     saveUserStates();
