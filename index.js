@@ -139,10 +139,10 @@ function startBotForUser(chatId, config) { // <--- تم نقلها هنا لتك
                             const previousCandleClose = currentTickPrice;
 
                             if (previousCandleClose < previousCandleOpen) {
-                                tradeDirection = 'CALL';
+                                tradeDirection = 'PUT';
                                 bot.sendMessage(chatId, `📉 الشمعة السابقة (5 دقائق) هابطة (فتح: ${previousCandleOpen.toFixed(3)}, إغلاق: ${previousCandleClose.toFixed(3)}).`);
                             } else if (previousCandleClose > previousCandleOpen) {
-                                tradeDirection = 'PUT';
+                                tradeDirection = 'CALL';
                                 bot.sendMessage(chatId, `📈 الشمعة السابقة (5 دقائق) صاعدة (فتح: ${previousCandleOpen.toFixed(3)}, إغلاق: ${previousCandleClose.toFixed(3)}).`);
                             } else {
                                 bot.sendMessage(chatId, `↔ الشمعة السابقة (5 دقائق) بدون تغيير. لا يوجد اتجاه واضح.`);
@@ -233,7 +233,7 @@ function startBotForUser(chatId, config) { // <--- تم نقلها هنا لتك
 
                 let messageText = `📊 نتيجة الصفقة: ❌ خسارة! خسارة: ${Math.abs(profit).toFixed(2)}\n💰 الرصيد الكلي: ${config.profit.toFixed(2)}\n📈 ربح: ${config.win} | 📉 خسارة: ${config.loss}`;
 
-                const maxMartingaleLosses = 4;
+                const maxMartingaleLosses = 6;
 
                 if (config.currentTradeCountInCycle >= maxMartingaleLosses) {
                     messageText += `\n🛑 تم الوصول إلى الحد الأقصى للخسائر في دورة المارتينغال (${maxMartingaleLosses} صفقات متتالية). تم إيقاف البوت تلقائياً.`;
