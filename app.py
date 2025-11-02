@@ -330,7 +330,7 @@ def bot_core_logic(email, token, stake, tp, currency, account_type):
                     
                 
                 # 💡 التغيير: توقيت الدخول عند الثواني 0, 15, 30, 45
-                entry_seconds = [0, 15, 30, 45] 
+                entry_seconds = [0] 
                 current_second = datetime.fromtimestamp(current_timestamp, tz=timezone.utc).second
                 is_entry_time = current_second in entry_seconds
                 
