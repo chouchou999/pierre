@@ -13,14 +13,14 @@ from threading import Lock
 # BOT CONSTANT SETTINGS (R_100 | x29 | انتظار الثانية 0)
 # ==========================================================
 WSS_URL = "wss://blue.derivws.com/websockets/v3?app_id=16929"
-SYMBOL = "R_100"               
+SYMBOL = "R_25"               
 DURATION = 5                   
 DURATION_UNIT = "t"
 
 # إعدادات المضاعفة
 MARTINGALE_STEPS = 1           
 MAX_CONSECUTIVE_LOSSES = 2     
-MARTINGALE_MULTIPLIER = 29.0   
+MARTINGALE_MULTIPLIER = 14.0   
 BARRIER_OFFSET = "0.05"        
 
 RECONNECT_DELAY = 1
@@ -229,9 +229,9 @@ def apply_martingale_logic(email):
         current_data['current_stake_lower'] = new_stake
         current_data['current_stake_higher'] = new_stake 
         
-        entry_tag = "WAITING @ SEC 0" # ⬅ *مؤشر انتظار المضاعفة*
+        entry_tag = "WAITING @ SEC 0" # ⬅ مؤشر انتظار المضاعفة
         
-        print(f"🔄 [DOUBLE LOSS] PnL: {total_profit:.2f}. Step {current_data['current_step']}. Next Stake ({MARTINGALE_MULTIPLIER}^{current_data['current_step']}) calculated: {round(new_stake, 2):.2f}. *Waiting for Sec 0.*")
+        print(f"🔄 [DOUBLE LOSS] PnL: {total_profit:.2f}. Step {current_data['current_step']}. Next Stake ({MARTINGALE_MULTIPLIER}^{current_data['current_step']}) calculated: {round(new_stake, 2):.2f}. Waiting for Sec 0.")
         
     # ✅ Win or Split/Draw Condition
     else: 
@@ -251,7 +251,7 @@ def apply_martingale_logic(email):
     current_data['open_contract_ids'] = []
     current_data['contract_profits'] = {}
     
-    # ⬅ *النقطة الأهم:* يجب إزالة علامة is_contract_open للسماح للمنطق في on_message_wrapper بالدخول عند الثانية 0
+    # ⬅ النقطة الأهم: يجب إزالة علامة is_contract_open للسماح للمنطق في on_message_wrapper بالدخول عند الثانية 0
     is_contract_open[email] = False 
 
     currency = current_data.get('currency', 'USD')
@@ -382,7 +382,7 @@ def bot_core_logic(email, token, stake, tp, currency, account_type):
                 
                 # === منطق الدخول الموحد (ينتظر الثانية 0 لكلا الخطوتين: 0 و 1) ===
                 if not is_contract_open.get(email):
-                    if current_second == 58:
+                    if current_second == 6:
                         start_new_dual_trade(email)
                 # === نهاية منطق الدخول ===
 
@@ -396,7 +396,7 @@ def bot_core_logic(email, token, stake, tp, currency, account_type):
             elif 'error' in data:
                 error_code = data['error'].get('code', 'N/A')
                 error_message = data['error'].get('message', 'Unknown Error')
-                print(f"❌❌ [API ERROR] Code: {error_code}, Message: {error_message}. *Dual trade may be disrupted.*")
+                print(f"❌❌ [API ERROR] Code: {error_code}, Message: {error_message}. Dual trade may be disrupted.")
                 
                 if current_data['current_entry_id'] is not None and is_contract_open.get(email):
                     time.sleep(1) 
@@ -414,7 +414,7 @@ def bot_core_logic(email, token, stake, tp, currency, account_type):
                     if 'subscription_id' in data: ws_app.send(json.dumps({"forget": data['subscription_id']}))
 
         def on_close_wrapper(ws_app, code, msg):
-            print(f"⚠ [PROCESS] WS closed for {email}. *RECONNECTING IMMEDIATELY.*")
+            print(f"⚠ [PROCESS] WS closed for {email}. RECONNECTING IMMEDIATELY.")
             is_contract_open[email] = False
 
         try:
