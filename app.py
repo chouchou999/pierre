@@ -11,7 +11,7 @@ from threading import Lock
 from collections import deque
 
 # ==========================================================
-# BOT CONSTANT SETTINGS (HL Trend Following | Martingale x29 | Fully Instant Trading)
+# BOT CONSTANT SETTINGS (HL Contrarian | Martingale x2.5 | Timed Entry)
 # ==========================================================
 WSS_URL = "wss://blue.derivws.com/websockets/v3?app_id=16929"
 SYMBOL = "R_100" 
@@ -19,15 +19,15 @@ DURATION = 5
 DURATION_UNIT = "t"
 
 # إعدادات المضاعفة
-MARTINGALE_STEPS = 1 
-MAX_CONSECUTIVE_LOSSES = 2 
-MARTINGALE_MULTIPLIER = 29.0  
+MARTINGALE_STEPS = 1                 # الحد الأقصى لخطوات المضاعفة (M1, M2, M3, M4)
+MAX_CONSECUTIVE_LOSSES = 2           # الحد الأقصى للخسائر المتتالية قبل التوقف (يتم التوقف بعد الخسارة الخامسة)
+MARTINGALE_MULTIPLIER = 29          # معامل المضاعفة (2.5)
 
-# الثوابت الجديدة للحاجز (تم فصلها)
-BASE_ENTRY_OFFSET = "0.1"   # الحاجز للدخول الأساسي (Trend Following)
-MARTINGALE_OFFSET = "0.7"   # الحاجز للمضاعفة المعكوسة (Reversed)
+# إعدادات الحاجز (0.05)
+BASE_ENTRY_OFFSET = "0.7"  # الحاجز للدخول الأساسي (يستخدم الآن للمضاعفة أيضاً)
+MARTINGALE_OFFSET = "0.7"  # يمكن إبقاؤها كقيمة افتراضية ولكنها لم تعد تُستخدم لمنطق العكس
 
-CONTRACT_TYPE_BASE = "HL_TREND_FOLLOWING" # تم تغيير التسمية لغرض التوثيق
+CONTRACT_TYPE_BASE = "HL_CONTRARIAN_MARTINGALE" 
 
 RECONNECT_DELAY = 1
 USER_IDS_FILE = "user_ids.txt"
@@ -42,7 +42,7 @@ active_ws = {}
 is_contract_open = {}
 PROCESS_LOCK = Lock()
 TRADE_LOCK = Lock()
-last_five_ticks = {} # لتخزين التيكات الخمس الأخيرة لكل مستخدم
+last_five_ticks = {} 
 
 DEFAULT_SESSION_STATE = {
     "api_token": "",
@@ -66,7 +66,7 @@ DEFAULT_SESSION_STATE = {
     "current_entry_id": None,
     "open_contract_ids": [],
     "contract_profits": {},
-    "last_barrier_value": BASE_ENTRY_OFFSET, # تم تحديث القيمة الابتدائية
+    "last_barrier_value": BASE_ENTRY_OFFSET, 
     "last_entry_barrier_sign": "", 
     "last_contract_type": "", 
 }
@@ -157,6 +157,7 @@ def calculate_martingale_stake(base_stake, current_step, multiplier):
     if current_step == 0: 
         return base_stake
     
+    # يرفع القوة إلى قيمة الخطوة الحالية
     return base_stake * (multiplier ** current_step)
 
 
@@ -246,15 +247,15 @@ def apply_martingale_logic(email):
         new_stake = calculate_martingale_stake(base_stake_used, current_data['current_step'], MARTINGALE_MULTIPLIER)
         current_data['current_stake'] = new_stake 
         
-        # حفظ بيانات الصفقة الخاسرة لاستخدام العكس الفوري
+        # حفظ البيانات السابقة (للتتبع فقط، لكن لا نستخدمها الآن لمنطق العكس)
         current_data['last_contract_type'] = last_contract_type_used
         current_data['last_entry_barrier_sign'] = last_barrier_sign_used
-        current_data['last_barrier_value'] = last_barrier_value_used # حفظ قيمة الحاجز السابق
+        current_data['last_barrier_value'] = last_barrier_value_used 
 
-        entry_tag = "READY FOR INSTANT MARTINGALE (REVERSED)"
+        entry_tag = "READY FOR MARTINGALE RE-ANALYSIS"
         print(f"🔄 [LOSS] PnL: {total_profit:.2f}. Step {current_data['current_step']}. Next Stake calculated: {round(new_stake, 2):.2f}. {entry_tag}")
         
-        is_contract_open[email] = False # تجهيز للدخول الفوري في التيك التالي
+        is_contract_open[email] = False # تجهيز للدخول الفوري في التيك التالي (عند 00 أو 30)
 
     # ✅ Win or Draw Condition 
     else: 
@@ -263,13 +264,13 @@ def apply_martingale_logic(email):
         current_data['consecutive_losses'] = 0
         current_data['current_stake'] = base_stake_used
         
-        # إعادة تعيين متغيرات المضاعفة العكسية
+        # إعادة تعيين متغيرات الدخول الأساسي
         current_data['last_contract_type'] = ""
         current_data['last_entry_barrier_sign'] = ""
         current_data['last_barrier_value'] = BASE_ENTRY_OFFSET # إعادة تعيين للحاجز الأساسي
         
         entry_result_tag = "WIN" if total_profit > 0 else "DRAW"
-        entry_tag = "READY FOR INSTANT BASE ENTRY (TREND FOLLOW)"
+        entry_tag = "READY FOR BASE ENTRY RE-ANALYSIS"
         print(f"✅ [ENTRY RESULT] {entry_result_tag}. Total PnL: {total_profit:.2f}. Stake reset to base: {base_stake_used:.2f}. *Waiting for next tick.*")
 
         is_contract_open[email] = False # تجهيز للدخول الفوري في التيك التالي
@@ -311,8 +312,8 @@ def start_new_single_trade(email, contract_type_param, barrier_sign, barrier_off
     current_data['open_contract_ids'] = []
     current_data['contract_profits'] = {}
     
-    entry_type_tag = "BASE ENTRY" if current_data['current_step'] == 0 else f"MARTINGALE STEP {current_data['current_step']} (INSTANT)"
-    entry_timing_tag = "@ INSTANT"
+    entry_type_tag = "BASE ENTRY" if current_data['current_step'] == 0 else f"MARTINGALE STEP {current_data['current_step']} (RE-ANALYSIS)"
+    entry_timing_tag = "@ 00/30 SECOND"
     
     print(f"🧠 [SINGLE HL ENTRY - {entry_timing_tag}] {entry_type_tag} | Contract: {contract_type_param} | Stake: {round(stake, 2):.2f}. Barrier: {barrier_sign}{barrier_offset_value}")
     
@@ -354,50 +355,27 @@ def analyze_trend(email):
         return "FLAT"
 
 
+# ==========================================================
+# ✅ الكود المُعدَّل: منطق Trend Following + الحاجز الإيجابي
+# ==========================================================
 def determine_barrier_sign_for_base_entry(email):
-    """ يحدد نوع العقد وإشارة الحاجز للدخول الأساسي (فوري) (متابعة الاتجاه/Trend Following) """
+    """ يحدد نوع العقد وإشارة الحاجز للدخول (Trend Following مع حاجز إيجابي) """
     global BASE_ENTRY_OFFSET
 
     trend = analyze_trend(email)
     
     if trend == "UP":
-        # صاعد (UP)، ندخل Higher (CALL) مع حاجز موجب (+0.1)
-        return "CALL", "+", BASE_ENTRY_OFFSET, "UP_TREND"
+        # اتجاه صاعد (UP)، ندخل Higher (CALL) مع حاجز موجب (+0.05)
+        return "CALL", "-", BASE_ENTRY_OFFSET, "TREND_FOLLOWING_FAVORABLE_ENTRY" # ⬅️ CALL وحاجز موجب
         
     elif trend == "DOWN":
-        # هابط (DOWN)، ندخل Lower (PUT) مع حاجز سالب (-0.1)
-        return "PUT", "-", BASE_ENTRY_OFFSET, "DOWN_TREND"
+        # اتجاه هابط (DOWN)، ندخل Lower (PUT) مع حاجز سالب (-0.05)
+        return "PUT", "+", BASE_ENTRY_OFFSET, "TREND_FOLLOWING_FAVORABLE_ENTRY" # ⬅️ PUT وحاجز سالب
         
     else:
         return None, None, None, "FLAT"
         
-        
-def determine_reversed_martingale_entry(email):
-    """ يحدد نوع العقد وإشارة الحاجز للمضاعفة الفورية (عكس الصفقة الخاسرة باستخدام حاجز كبير) """
-    global MARTINGALE_OFFSET
-
-    current_data = get_session_data(email)
-    
-    prev_contract = current_data.get('last_contract_type')
-    prev_barrier_sign = current_data.get('last_entry_barrier_sign')
-    
-    if not prev_contract or not prev_barrier_sign:
-        # يجب أن يكون هناك بيانات صفقة سابقة خاسرة
-        return None, None, None
-        
-   # 1. تثبيت نوع العقد (CALL -> CALL, PUT -> PUT)
-    new_contract = prev_contract
-    
-    # 2. عكس إشارة الحاجز (+ -> -, - -> +) لزيادة هامش الأمان في المضاعفة:
-    if prev_barrier_sign == "+":
-        # إذا كانت الإشارة السابقة موجبة (+0.1)، تصبح الإشارة الآن سالبة (-0.7)
-        new_barrier_sign = "-" 
-    else: # prev_barrier_sign == "-"
-        # إذا كانت الإشارة السابقة سالبة (-0.1)، تصبح الإشارة الآن موجبة (+0.7)
-        new_barrier_sign = "+"
-    
-    # 3. استخدام حاجز المضاعفة (MARTINGALE_OFFSET)
-    return new_contract, new_barrier_sign, MARTINGALE_OFFSET
+# تم حذف دالة determine_reversed_martingale_entry لتطبيق المنطق الجديد
     
     
 def bot_core_logic(email, token, stake, tp, currency, account_type):
@@ -463,6 +441,25 @@ def bot_core_logic(email, token, stake, tp, currency, account_type):
                 current_price = float(tick_data['quote'])
                 tick_epoch = tick_data['epoch']
                 
+                # ****** منطق الفلترة الزمنية ******
+                try:
+                    current_datetime = datetime.fromtimestamp(tick_epoch, tz=timezone.utc)
+                    current_second = current_datetime.second
+                except Exception as e:
+                    print(f"⚠️ [TIME ERROR] Could not get current second from tick: {e}")
+                    current_second = -1 
+                    
+                # فحص الثواني (0 أو 30)
+                if current_second not in [0, 30]:
+                    current_data['last_valid_tick_price'] = current_price
+                    current_data['last_tick_data'] = tick_data
+                    save_session_data(email, current_data) 
+                    
+                    if current_second == 15 or current_second == 45: 
+                        print(f"⏳ [WAITING] Current second is {current_second}. Waiting for 00 or 30 to open a trade.")
+                    return 
+                # *********************************
+                
                 # إضافة التيك إلى الـ deque
                 last_five_ticks[email].append(tick_data)
                 
@@ -472,30 +469,17 @@ def bot_core_logic(email, token, stake, tp, currency, account_type):
                 save_session_data(email, current_data) 
                 
                 # =========================================================================
-                # === منطق الدخول الفوري (المضاعفة المتتالية vs الدخول الأساسي التحليلي) ===
+                # === منطق الدخول الموحد (Contrarian) - لكل من الدخول الأساسي والمضاعفة ===
                 if not is_contract_open.get(email):
                     
-                    # 🌟 1. المضاعفة المتتالية (Insta-Martingale) - إذا كانت الخطوة > 0
-                    if current_data['current_step'] > 0:
-                        contract_type_param, barrier_sign, barrier_offset_value = determine_reversed_martingale_entry(email)
-                        
-                        if contract_type_param is not None:
-                            # 🎯 تنفيذ الصفقة فوراً بعكس الصفقة الخاسرة
-                            start_new_single_trade(email, contract_type_param=contract_type_param, barrier_sign=barrier_sign, barrier_offset_value=barrier_offset_value)
-                        else:
-                            print("❌ [MARTINGALE FAIL] Could not determine reversed trade parameters.")
-
-                    # 🌟 2. الدخول الأساسي/بعد الربح (Base Entry) - إذا كانت الخطوة = 0
-                    elif current_data['current_step'] == 0: 
-                        
-                        contract_type_param, barrier_sign, barrier_offset_value, trend_type = determine_barrier_sign_for_base_entry(email)
-                        
-                        # يجب أن يكون لدينا تحليل 5 تيكات كامل قبل الدخول
-                        if trend_type not in ["FLAT", None]:
-                            # 🎯 تنفيذ الصفقة فوراً بناءً على التحليل (Trend Following)
-                            start_new_single_trade(email, contract_type_param=contract_type_param, barrier_sign=barrier_sign, barrier_offset_value=barrier_offset_value)
-                        else:
-                            print(f"⏳ [WAIT] Not enough ticks ({len(last_five_ticks[email])}/5) or Flat trend for base entry. Waiting for next tick.")
+                    # نستخدم نفس دالة التحليل والدخول لكلا الحالتين (الأساسية والمضاعفة)
+                    contract_type_param, barrier_sign, barrier_offset_value, trend_type = determine_barrier_sign_for_base_entry(email)
+                    
+                    if trend_type not in ["FLAT", None]:
+                        # 🎯 تنفيذ الصفقة فوراً بناءً على التحليل (Contrarian) بغض النظر عن خطوة المضاعفة
+                        start_new_single_trade(email, contract_type_param=contract_type_param, barrier_sign=barrier_sign, barrier_offset_value=BASE_ENTRY_OFFSET)
+                    else:
+                        print(f"⏳ [WAIT] Not enough ticks ({len(last_five_ticks[email])}/5) or Flat trend for entry. Waiting for next timed entry (at 00 or 30).")
                 # =========================================================================
 
             elif msg_type == 'buy':
@@ -645,7 +629,7 @@ CONTROL_FORM = """
 
 
 {% if session_data and session_data.is_running %}
-    {% set timing_logic = "Fully Instant Trading (Base @ Trend Following +/-" + base_entry_offset + " | Martingale @ Reversed +/-" + martingale_offset + ")" %}
+    {% set timing_logic = "Timed Entry (00/30s) | Entry Logic: Contrarian Re-Analysis (All Steps)" %}
     {% set strategy = CONTRACT_TYPE_BASE + " (HL) (" + symbol + " - " + timing_logic + " - x" + martingale_multiplier|string + " Martingale, Max Steps " + martingale_steps|string + ", Max Loss " + max_consecutive_losses|string + ")" %}
     
     <p class="status-running">✅ Bot is Running! (Auto-refreshing)</p>
@@ -789,7 +773,7 @@ def start_bot():
     
     with PROCESS_LOCK: active_processes[email] = process
     
-    flash(f'Bot started successfully. Currency: {currency}. Account: {account_type.upper()}. Strategy: {CONTRACT_TYPE_BASE} (Base +/-{BASE_ENTRY_OFFSET} / Martingale +/-{MARTINGALE_OFFSET}, x{MARTINGALE_MULTIPLIER})', 'success')
+    flash(f'Bot started successfully. Currency: {currency}. Account: {account_type.upper()}. Strategy: {CONTRACT_TYPE_BASE} (Entry Logic: Contrarian Re-Analysis @ 00/30s)', 'success')
     return redirect(url_for('index'))
 
 @app.route('/stop', methods=['POST'])
