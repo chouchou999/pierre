@@ -6,88 +6,83 @@ from flask import Flask
 
 app = Flask(__name__)
 
-# --- إعدادات الحساب ---
+# --- بيانات حسابك (تأكد من كتابتها بدقة) ---
 EMAIL = "yasinobr000@gmail.com"
 PASSWORD = "mmmmmmmm"
 ASSET = "USDMXN_otc"
 
-current_price = "جاري الاتصال بالسيرفر..."
+current_price = "جاري بدء الاتصال..."
+debug_status = "بدء النظام..."
 
 def get_quotex_class():
-    """وظيفة ذكية لاستخراج الكلاس الصحيح من المكتبة مهما كانت هيكلتها"""
     try:
-        # محاولة الاستيراد الديناميكي
         module = importlib.import_module('pyquotex.api')
-        # البحث عن أي كلاس يبدأ اسمه بـ Quotex (سواء Quotex أو QuotexAPI)
         for name in dir(module):
-            if "Quotex" in name:
-                return getattr(module, name)
-    except Exception:
+            if "Quotex" in name: return getattr(module, name)
+    except:
         try:
             module = importlib.import_module('pyquotex')
             for name in dir(module):
-                if "Quotex" in name:
-                    return getattr(module, name)
-        except Exception:
-            return None
+                if "Quotex" in name: return getattr(module, name)
+        except: return None
     return None
 
 def fetch_price():
-    global current_price
-    time.sleep(5)  # انتظار بسيط للتأكد من استقرار السيرفر عند البدء
+    global current_price, debug_status
     
     QuotexClass = get_quotex_class()
-    
     if not QuotexClass:
-        current_price = "خطأ: لم يتم العثور على محرك Quotex داخل المكتبة"
+        current_price = "خطأ في المكتبة"
+        debug_status = "لم يتم العثور على محرك الاتصال"
         return
 
     try:
+        debug_status = "محاولة تسجيل الدخول..."
         client = QuotexClass(email=EMAIL, password=PASSWORD)
         check, message = client.connect()
         
         if check:
-            # الاشتراك في الزوج (البيزو المكسيكي OTC)
+            debug_status = f"تم الاتصال! جاري طلب سعر {ASSET}"
             client.subscribe_realtime_candle(ASSET, 1)
+            
+            # محاولة جلب البيانات لمدة دقيقة
+            start_time = time.time()
             while True:
                 candles = client.get_realtime_candles(ASSET)
                 if candles:
-                    # جلب السعر الأحدث
                     last_ts = list(candles.keys())[-1]
-                    price = candles[last_ts]['close']
-                    current_price = f"{price}"
-                time.sleep(18) # الانتظار المبرمج الخاص بك
+                    current_price = f"{candles[last_ts]['close']}"
+                    debug_status = "البيانات تصل بنجاح ✅"
+                else:
+                    # إذا مر وقت طويل ولم تصل بيانات الزوج
+                    if time.time() - start_time > 30:
+                        debug_status = f"خطأ: الزوج {ASSET} لا يعيد بيانات. تأكد من الاسم."
+                
+                time.sleep(18) # وقت الانتظار الخاص بك [cite: 2026-02-09]
         else:
-            current_price = f"فشل تسجيل الدخول: {message}"
+            current_price = "فشل تسجيل الدخول"
+            debug_status = f"السبب: {message}"
     except Exception as e:
-        current_price = f"خطأ في جلب البيانات: {str(e)}"
+        current_price = "خطأ تقني"
+        debug_status = str(e)
 
-# تشغيل عملية جلب السعر في الخلفية لكي لا يتوقف موقع Flask
 threading.Thread(target=fetch_price, daemon=True).start()
 
 @app.route('/')
 def home():
-    # تصميم بسيط وجذاب يعرض السعر بوضوح
     return f"""
     <html>
-        <head>
-            <meta http-equiv="refresh" content="18">
-            <title>USD/MXN OTC Live</title>
-            <style>
-                body {{ background-color: #0b0e11; color: #e9ecef; text-align: center; font-family: sans-serif; padding-top: 20vh; }}
-                .price {{ font-size: 90px; font-weight: bold; color: #00ff88; text-shadow: 0 0 20px rgba(0,255,136,0.3); }}
-                .label {{ font-size: 20px; color: #848e9c; margin-bottom: 10px; }}
-            </style>
-        </head>
-        <body>
-            <div class="label">{ASSET} LIVE PRICE</div>
-            <div class="price">{current_price}</div>
-            <p style="color: #474d57;">تحديث تلقائي كل 18 ثانية</p>
+        <head><meta http-equiv="refresh" content="10"></head>
+        <body style="background-color: #0b0e11; color: white; text-align: center; font-family: sans-serif; padding-top: 15vh;">
+            <div style="font-size: 20px; color: #848e9c;">{ASSET} PRICE</div>
+            <div style="font-size: 70px; font-weight: bold; color: #00ff88;">{current_price}</div>
+            <hr style="width: 50%; border: 0.5px solid #222; margin: 30px auto;">
+            <div style="font-size: 18px; color: #f0b90b;">حالة السيرفر: {debug_status}</div>
+            <p style="color: #474d57; font-size: 12px;">تحديث تلقائي كل 10 ثوانٍ لفحص الحالة</p>
         </body>
     </html>
     """
 
 if __name__ == "__main__":
-    # الحصول على البورت من Render
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
