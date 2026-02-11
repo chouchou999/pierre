@@ -1,6 +1,5 @@
-flask
-requests
 websocket-client
-numpy
-pandas
-gunicorn
+requests
+pydispatcher
+six
+git+https://github.com/cleitonleonel/pyquotex.git
