@@ -4,3 +4,4 @@ websocket-client
 requests
 pydispatcher
 six
+git+https://github.com/cleitonleonel/pyquotex.git
