@@ -4,4 +4,5 @@ websocket-client
 requests
 pydispatcher
 six
+pyfiglet
 git+https://github.com/cleitonleonel/pyquotex.git
