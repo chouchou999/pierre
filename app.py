@@ -9,10 +9,12 @@ app = Flask(__name__)
 # --- بيانات حسابك (تأكد من كتابتها بدقة) ---
 EMAIL = "yasinobr000@gmail.com"
 PASSWORD = "mmmmmmmm"
-ASSET = "USDMXN_otc"
 
-current_price = "جاري بدء الاتصال..."
-debug_status = "بدء النظام..."
+# سنقوم بتجربة هذه الأسماء بالترتيب حتى نجد الصحيح
+POSSIBLE_ASSETS = ["USDMXN_otc", "USDMXN-OTC", "USDMXN"]
+
+current_price = "جاري الاتصال..."
+debug_status = "بدء الفحص الذاتي..."
 
 def get_quotex_class():
     try:
@@ -32,40 +34,45 @@ def fetch_price():
     
     QuotexClass = get_quotex_class()
     if not QuotexClass:
-        current_price = "خطأ في المكتبة"
-        debug_status = "لم يتم العثور على محرك الاتصال"
+        debug_status = "خطأ: لم يتم تثبيت محرك الاتصال بشكل صحيح"
         return
 
     try:
-        debug_status = "محاولة تسجيل الدخول..."
+        debug_status = "محاولة تسجيل الدخول إلى Quotex..."
         client = QuotexClass(email=EMAIL, password=PASSWORD)
         check, message = client.connect()
         
         if check:
-            debug_status = f"تم الاتصال! جاري طلب سعر {ASSET}"
-            client.subscribe_realtime_candle(ASSET, 1)
+            debug_status = "✅ نجح الدخول! جاري البحث عن اسم الزوج الصحيح..."
             
-            # محاولة جلب البيانات لمدة دقيقة
-            start_time = time.time()
-            while True:
-                candles = client.get_realtime_candles(ASSET)
+            # محاولة البحث عن الزوج الصحيح
+            found_asset = None
+            for asset in POSSIBLE_ASSETS:
+                client.subscribe_realtime_candle(asset, 1)
+                time.sleep(3) # انتظار بسيط للتأكد من الاشتراك
+                candles = client.get_realtime_candles(asset)
                 if candles:
-                    last_ts = list(candles.keys())[-1]
-                    current_price = f"{candles[last_ts]['close']}"
-                    debug_status = "البيانات تصل بنجاح ✅"
-                else:
-                    # إذا مر وقت طويل ولم تصل بيانات الزوج
-                    if time.time() - start_time > 30:
-                        debug_status = f"خطأ: الزوج {ASSET} لا يعيد بيانات. تأكد من الاسم."
-                
-                time.sleep(18) # وقت الانتظار الخاص بك [cite: 2026-02-09]
+                    found_asset = asset
+                    break
+            
+            if found_asset:
+                debug_status = f"✅ يعمل على: {found_asset}"
+                while True:
+                    candles = client.get_realtime_candles(found_asset)
+                    if candles:
+                        last_ts = list(candles.keys())[-1]
+                        current_price = f"{candles[last_ts]['close']}"
+                    # الالتزام بوقت الانتظار 18 ثانية [cite: 2026-02-09]
+                    time.sleep(18)
+            else:
+                debug_status = "❌ فشل: لم نجد بيانات لزوج USDMXN بجميع الصيغ"
         else:
-            current_price = "فشل تسجيل الدخول"
-            debug_status = f"السبب: {message}"
+            current_price = "فشل الدخول"
+            debug_status = f"السبب من المنصة: {message}"
     except Exception as e:
-        current_price = "خطأ تقني"
-        debug_status = str(e)
+        debug_status = f"خطأ تقني: {str(e)}"
 
+# تشغيل الجلب في الخلفية لضمان عمل السيرفر
 threading.Thread(target=fetch_price, daemon=True).start()
 
 @app.route('/')
@@ -74,11 +81,10 @@ def home():
     <html>
         <head><meta http-equiv="refresh" content="10"></head>
         <body style="background-color: #0b0e11; color: white; text-align: center; font-family: sans-serif; padding-top: 15vh;">
-            <div style="font-size: 20px; color: #848e9c;">{ASSET} PRICE</div>
-            <div style="font-size: 70px; font-weight: bold; color: #00ff88;">{current_price}</div>
-            <hr style="width: 50%; border: 0.5px solid #222; margin: 30px auto;">
-            <div style="font-size: 18px; color: #f0b90b;">حالة السيرفر: {debug_status}</div>
-            <p style="color: #474d57; font-size: 12px;">تحديث تلقائي كل 10 ثوانٍ لفحص الحالة</p>
+            <div style="font-size: 20px; color: #848e9c;">USD/MXN OTC Monitor</div>
+            <div style="font-size: 80px; font-weight: bold; color: #00ff88; margin: 20px 0;">{current_price}</div>
+            <hr style="width: 40%; border: 0.1px solid #222; margin: 30px auto;">
+            <div style="font-size: 16px; color: #f0b90b; padding: 10px;">الحالة: {debug_status}</div>
         </body>
     </html>
     """
