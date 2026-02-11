@@ -1,90 +1,85 @@
 import os
+import asyncio
 import threading
 import time
-import importlib
 from flask import Flask
+from pyquotex.stable_api import Quotex
 
 app = Flask(__name__)
 
 # --- بيانات حسابك (تأكد من كتابتها بدقة) ---
-EMAIL = "yasinobr000@gmail.com"
-PASSWORD = "mmmmmmmm"
+EMAIL = "your_email@example.com"
+PASSWORD = "your_password"
+ASSET = "USDMXN_otc"
 
-# سنقوم بتجربة هذه الأسماء بالترتيب حتى نجد الصحيح
-POSSIBLE_ASSETS = ["USDMXN_otc", "USDMXN-OTC", "USDMXN"]
-
+# متغيرات الحالة العالمية
 current_price = "جاري الاتصال..."
-debug_status = "بدء الفحص الذاتي..."
+last_update = ""
 
-def get_quotex_class():
-    try:
-        module = importlib.import_module('pyquotex.api')
-        for name in dir(module):
-            if "Quotex" in name: return getattr(module, name)
-    except:
-        try:
-            module = importlib.import_module('pyquotex')
-            for name in dir(module):
-                if "Quotex" in name: return getattr(module, name)
-        except: return None
-    return None
-
-def fetch_price():
-    global current_price, debug_status
+async def price_fetcher_task():
+    global current_price, last_update
     
-    QuotexClass = get_quotex_class()
-    if not QuotexClass:
-        debug_status = "خطأ: لم يتم تثبيت محرك الاتصال بشكل صحيح"
-        return
-
-    try:
-        debug_status = "محاولة تسجيل الدخول إلى Quotex..."
-        client = QuotexClass(email=EMAIL, password=PASSWORD)
-        check, message = client.connect()
-        
-        if check:
-            debug_status = "✅ نجح الدخول! جاري البحث عن اسم الزوج الصحيح..."
-            
-            # محاولة البحث عن الزوج الصحيح
-            found_asset = None
-            for asset in POSSIBLE_ASSETS:
-                client.subscribe_realtime_candle(asset, 1)
-                time.sleep(3) # انتظار بسيط للتأكد من الاشتراك
-                candles = client.get_realtime_candles(asset)
-                if candles:
-                    found_asset = asset
-                    break
-            
-            if found_asset:
-                debug_status = f"✅ يعمل على: {found_asset}"
+    # تهيئة العميل باستخدام الـ Stable API
+    client = Quotex(email=EMAIL, password=PASSWORD)
+    
+    while True:
+        try:
+            check, reason = await client.connect()
+            if check:
+                print(f"✅ Connected to Quotex Stable API for {ASSET}")
+                
+                # بدء مراقبة السعر اللحظي
+                await client.start_realtime_price(ASSET)
+                
                 while True:
-                    candles = client.get_realtime_candles(found_asset)
-                    if candles:
-                        last_ts = list(candles.keys())[-1]
-                        current_price = f"{candles[last_ts]['close']}"
-                    # الالتزام بوقت الانتظار 18 ثانية [cite: 2026-02-09]
-                    time.sleep(18)
+                    # جلب البيانات اللحظية
+                    price_data = await client.get_realtime_price(ASSET)
+                    if price_data:
+                        # الحصول على آخر سعر من القائمة
+                        latest = price_data[-1]
+                        current_price = f"{latest['price']:.5f}"
+                        last_update = time.strftime('%H:%M:%S', time.localtime(latest['time']))
+                    
+                    # الالتزام بوقت الانتظار الخاص بك (18 ثانية) [2026-02-09]
+                    await asyncio.sleep(18)
             else:
-                debug_status = "❌ فشل: لم نجد بيانات لزوج USDMXN بجميع الصيغ"
-        else:
-            current_price = "فشل الدخول"
-            debug_status = f"السبب من المنصة: {message}"
-    except Exception as e:
-        debug_status = f"خطأ تقني: {str(e)}"
+                current_price = "فشل تسجيل الدخول"
+                print(f"❌ Login failed: {reason}")
+                await asyncio.sleep(10) # محاولة إعادة الاتصال بعد 10 ثوانٍ
+        except Exception as e:
+            print(f"⚠️ Error: {e}")
+            await asyncio.sleep(5)
 
-# تشغيل الجلب في الخلفية لضمان عمل السيرفر
-threading.Thread(target=fetch_price, daemon=True).start()
+def run_async_loop():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(price_fetcher_task())
+
+# تشغيل محرك جلب الأسعار في خيط (Thread) منفصل
+threading.Thread(target=run_async_loop, daemon=True).start()
 
 @app.route('/')
 def home():
     return f"""
     <html>
-        <head><meta http-equiv="refresh" content="10"></head>
-        <body style="background-color: #0b0e11; color: white; text-align: center; font-family: sans-serif; padding-top: 15vh;">
-            <div style="font-size: 20px; color: #848e9c;">USD/MXN OTC Monitor</div>
-            <div style="font-size: 80px; font-weight: bold; color: #00ff88; margin: 20px 0;">{current_price}</div>
-            <hr style="width: 40%; border: 0.1px solid #222; margin: 30px auto;">
-            <div style="font-size: 16px; color: #f0b90b; padding: 10px;">الحالة: {debug_status}</div>
+        <head>
+            <meta http-equiv="refresh" content="18">
+            <title>USD/MXN Professional Monitor</title>
+            <style>
+                body {{ background-color: #0b0e11; color: white; text-align: center; font-family: sans-serif; padding-top: 15vh; }}
+                .card {{ background: #161a1e; display: inline-block; padding: 40px; border-radius: 15px; border: 1px solid #2b2f36; }}
+                .price {{ font-size: 80px; font-weight: bold; color: #00ff88; margin: 20px 0; }}
+                .asset {{ font-size: 24px; color: #848e9c; }}
+                .time {{ color: #474d57; font-size: 14px; }}
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <div class="asset">{ASSET} - LIVE PRICE</div>
+                <div class="price">{current_price}</div>
+                <div class="time">آخر تحديث بتوقيت السيرفر: {last_update}</div>
+            </div>
+            <p style="color: #2b2f36; font-size: 12px; margin-top: 20px;">Powered by Stable API & Render</p>
         </body>
     </html>
     """
