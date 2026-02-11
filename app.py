@@ -1,21 +1,32 @@
 from flask import Flask
 import threading
 import time
-from pyquotex.api import Quotex
+import pyquotex  # استدعاء المكتبة بشكل عام أولاً
 
 app = Flask(__name__)
 
-# --- إعدادات الحساب ---
+# إعدادات الحساب
 EMAIL = "yasinobr000@gmail.com"
 PASSWORD = "mmmmmmmm"
 ASSET = "USDMXN_otc"
 
-# متغير عالمي لتخزين السعر
 current_price = "جاري جلب السعر..."
 
 def fetch_price():
     global current_price
-    client = Quotex(email=EMAIL, password=PASSWORD)
+    # التعديل هنا: الوصول لـ Quotex عبر المسار الصحيح المكتشف في السجلات
+    try:
+        from pyquotex.api import Quotex
+        client = Quotex(email=EMAIL, password=PASSWORD)
+    except (ImportError, AttributeError):
+        # محاولة بديلة إذا كان المسار مختلفاً
+        try:
+            from pyquotex import Quotex
+            client = Quotex(email=EMAIL, password=PASSWORD)
+        except:
+            current_price = "خطأ في هيكلة المكتبة"
+            return
+
     check, message = client.connect()
     
     if check:
@@ -24,27 +35,24 @@ def fetch_price():
             candles = client.get_realtime_candles(ASSET)
             if candles:
                 current_price = list(candles.values())[-1]['close']
-            # تحديث كل 18 ثانية حسب استراتيجيتك
             time.sleep(18) 
     else:
-        current_price = f"خطأ في الاتصال: {message}"
+        current_price = f"فشل تسجيل الدخول: {message}"
 
-# تشغيل جلب الأسعار في خلفية السيرفر
 threading.Thread(target=fetch_price, daemon=True).start()
 
 @app.route('/')
 def home():
     return f"""
     <html>
-        <head><meta http-equiv="refresh" content="18"><title>Quotex Price</title></head>
-        <body style="font-family: Arial; text-align: center; margin-top: 50px;">
-            <h1>السعر الحالي لزوج {ASSET}</h1>
-            <div style="font-size: 48px; color: #2ecc71;">{current_price}</div>
-            <p>يتم التحديث تلقائياً كل 18 ثانية</p>
+        <head><meta http-equiv="refresh" content="18"></head>
+        <body style="background-color: #1a1a1a; color: #00ff88; text-align: center; font-family: sans-serif; padding-top: 100px;">
+            <h1>USD/MXN OTC Price</h1>
+            <div style="font-size: 80px; font-weight: bold;">{current_price}</div>
+            <p style="color: #666;">يتم التحديث تلقائياً كل 18 ثانية</p>
         </body>
     </html>
     """
 
 if __name__ == "__main__":
-    # Render يتطلب التسمع على البورت 10000 أو المتغير البيئي
     app.run(host='0.0.0.0', port=10000)
