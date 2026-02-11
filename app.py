@@ -8,8 +8,8 @@ from pyquotex.stable_api import Quotex
 app = Flask(__name__)
 
 # --- بيانات حسابك (تأكد من كتابتها بدقة) ---
-EMAIL = "your_email@example.com"
-PASSWORD = "your_password"
+EMAIL = "yasinobr000@gmail.com"
+PASSWORD = "mmmmmmmm"
 ASSET = "USDMXN_otc"
 
 # متغيرات الحالة العالمية
