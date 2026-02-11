@@ -1,34 +1,36 @@
 import os
-import subprocess
-import sys
-
-# وظيفة لإجبار السيرفر على تثبيت المكتبة من GitHub عند البدء
-def install_pyquotex():
-    try:
-        import pyquotex
-    except ImportError:
-        print("Installing pyquotex library...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "git+https://github.com/cleitonleonel/pyquotex.git"])
-
-# تنفيذ التثبيت قبل بدء تشغيل Flask
-install_pyquotex()
-
-from flask import Flask
 import threading
 import time
-from pyquotex.api import Quotex
+from flask import Flask
+
+# استدعاء مرن للمكتبة لتجنب ImportError
+try:
+    # المحاولة الأولى: الاستدعاء المباشر
+    from pyquotex import Quotex
+except ImportError:
+    try:
+        # المحاولة الثانية: من المسار الفرعي
+        from pyquotex.api import Quotex
+    except ImportError:
+        # المحاولة الثالثة: إذا كانت المكتبة مخزنة داخل كلاس مجهول
+        import pyquotex
+        Quotex = getattr(pyquotex, 'Quotex', None)
 
 app = Flask(__name__)
 
-# --- بيانات حسابك (تأكد من كتابتها بشكل صحيح) ---
+# --- بيانات حسابك (تأكد من صحتها) ---
 EMAIL = "yasinobr000@gmail.com"
 PASSWORD = "mmmmmmmm"
 ASSET = "USDMXN_otc"
 
-current_price = "في انتظار أول تحديث (18 ثانية)..."
+current_price = "في انتظار البيانات..."
 
 def fetch_price():
     global current_price
+    if not Quotex:
+        current_price = "خطأ: لم يتم العثور على Quotex داخل المكتبة"
+        return
+
     try:
         client = Quotex(email=EMAIL, password=PASSWORD)
         check, message = client.connect()
@@ -38,16 +40,17 @@ def fetch_price():
             while True:
                 candles = client.get_realtime_candles(ASSET)
                 if candles:
-                    # جلب آخر سعر متاح من القائمة
-                    last_time = list(candles.keys())[-1]
-                    current_price = f"{candles[last_time]['close']}"
+                    # جلب آخر سعر محدث
+                    last_ts = list(candles.keys())[-1]
+                    current_price = f"{candles[last_ts]['close']}"
+                # التزاماً بوقت الانتظار الخاص بك (18 ثانية)
                 time.sleep(18)
         else:
-            current_price = f"فشل تسجيل الدخول: {message}"
+            current_price = f"فشل الدخول: {message}"
     except Exception as e:
         current_price = f"خطأ تقني: {str(e)}"
 
-# بدء عملية جلب الأسعار في الخلفية
+# تشغيل المهمة في الخلفية
 threading.Thread(target=fetch_price, daemon=True).start()
 
 @app.route('/')
@@ -56,12 +59,12 @@ def home():
     <html>
         <head>
             <meta http-equiv="refresh" content="18">
-            <title>USD/MXN OTC Monitor</title>
+            <title>USD/MXN Monitor</title>
         </head>
         <body style="background-color: #0e1117; color: white; text-align: center; font-family: sans-serif; padding-top: 20vh;">
-            <div style="font-size: 20px; color: #888;">Live Price for {ASSET}</div>
-            <div style="font-size: 80px; font-weight: bold; color: #00ff88; margin: 20px 0;">{current_price}</div>
-            <p style="color: #444;">يتم التحديث تلقائياً كل 18 ثانية</p>
+            <div style="font-size: 20px; color: #888;">{ASSET} Live Price</div>
+            <div style="font-size: 80px; font-weight: bold; color: #00ff88;">{current_price}</div>
+            <p style="color: #444;">يتم التحديث كل 18 ثانية</p>
         </body>
     </html>
     """
